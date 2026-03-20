@@ -1,0 +1,12 @@
+# Dependências
+node_modules/
+
+# Variáveis de ambiente — NUNCA versionar
+.env
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,21 @@
+{
+  "name": "haxball-headless-room",
+  "version": "1.0.0",
+  "description": "HaxBall Headless Host sala completa com Supabase, economia, loja e sistema de admin",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "dev": "node --watch main.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.4.0",
+    "puppeteer": "^22.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}
