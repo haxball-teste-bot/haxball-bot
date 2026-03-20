@@ -17,7 +17,7 @@ import { dbCall } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 import { createHash } from 'crypto';
 
-const INITIAL_BALANCE = 1000; // Saldo inicial em centavos (R$ 10,00)
+const INITIAL_BALANCE = 0; // Saldo inicial em centavos (R$ 0,00)
 
 /** Gera hash SHA-256 de uma string */
 function hashPassword(pass) {
