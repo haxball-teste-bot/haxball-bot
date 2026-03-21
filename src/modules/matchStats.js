@@ -31,6 +31,10 @@ let currentMatchId = null;
 /** true se a partida atual for competitiva (conta rating) */
 let isCompetitive = false;
 
+/** Estado de Streak (Vitórias Seguidas) */
+let currentStreak = 0;
+let lastWinnerTeam = 0; // 1=red, 2=blue
+
 /** Map<playerId, { goals, assists, ownGoals, saves, passes, team, coinsEarned }> */
 const statsMap = new Map();
 
@@ -251,19 +255,41 @@ export async function finalizeMatch(room, winnerTeam, redScore, blueScore) {
     });
   }
 
-  // ── Recompensa por Vitória (10 Coins) ──
+  // ── Recompensa por Vitória (10 Coins) + Sistema de Streak ──
   if (winnerTeam !== null && winnerTeam !== 0) {
+    // Atualiza Streak
+    if (winnerTeam === lastWinnerTeam) {
+      currentStreak++;
+    } else {
+      lastWinnerTeam = winnerTeam;
+      currentStreak = 1;
+    }
+
+    const streakBonus = 1 + (0.1 * currentStreak); // 10% por streak (1.1x no 1º win, 1.2x no 2º, etc)
     const winners = [];
+    
     for (const [playerId, stats] of statsMap.entries()) {
       if (stats.team === winnerTeam) {
         winners.push(playerId);
         stats.coinsEarned += COINS.WIN;
+        
+        // Aplica o multiplicador de streak no total de coins ganhos na partida
+        stats.coinsEarned = Math.floor(stats.coinsEarned * streakBonus);
       }
     }
 
     if (winners.length > 0) {
-      // room.sendAnnouncement(`💰 Os vencedores receberam +10 Coins pela vitória!`, null, 0xFFD700, 'bold', 2);
-      // Removido anúncio global poluído, será enviado no privado
+      const teamName = winnerTeam === 1 ? 'Vermelho' : 'Azul';
+      logger.info(`[Streak] Time ${teamName} agora com ${currentStreak} vitórias seguidas. Bônus: ${Math.round((streakBonus-1)*100)}%`);
+    }
+  } else {
+    // Empate ou jogo parado reseta streak? O usuário não especificou. 
+    // Geralmente empate mantém ou reseta. Vou manter o streak se não houver vencedor claro, 
+    // mas se for 0x0 ou cancelado, talvez deva resetar. 
+    // Vou resetar apenas se houver um perdedor, mas aqui winnerTeam é null ou 0.
+    if (winnerTeam === 0) {
+        currentStreak = 0;
+        lastWinnerTeam = 0;
     }
   }
 
@@ -281,6 +307,8 @@ export async function finalizeMatch(room, winnerTeam, redScore, blueScore) {
         goals:       stats.goals,
         assists:     stats.assists,
         own_goals:   stats.ownGoals,
+        passes:      stats.passes,
+        saves:       stats.saves,
         rating_delta: delta,
       })
     );
@@ -332,4 +360,13 @@ export async function finalizeMatch(room, winnerTeam, redScore, blueScore) {
 /** @returns {boolean} true se há partida em andamento */
 export function isMatchActive() {
   return currentMatchId !== null;
+}
+
+/** Retorna informações do streak atual */
+export function getStreakInfo() {
+  return {
+    streak: currentStreak,
+    teamName: lastWinnerTeam === 1 ? 'Vermelho' : (lastWinnerTeam === 2 ? 'Azul' : 'Nenhum'),
+    bonusPercent: Math.round(currentStreak * 10)
+  };
 }

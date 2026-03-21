@@ -17,10 +17,10 @@ export const RATING = {
   MIN_RATING: 100,
 
   // Partida só conta rating se cada time tiver pelo menos este número de jogadores
-  MIN_PER_TEAM_FOR_COMPETITIVE: 2, // 1v1 já conta; defina 2 para exigir 2v2+
+  MIN_PER_TEAM_FOR_COMPETITIVE: 1, // 1v1 já conta; defina 2 para exigir 2v2+
 
   // Máximo de jogadores por time
-  MAX_PER_TEAM: 3,
+  MAX_PER_TEAM: 2,
 };
 
 export const COINS = {

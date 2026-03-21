@@ -66,6 +66,20 @@ export async function loadPlayerSession(player) {
   }
 
   if (!data) {
+    // Se NÃO encontrou pela auth_key, verifica se o NOME já existe (proteção requisitada)
+    const { data: nameData } = await dbCall(() =>
+      supabase
+        .from('user_info')
+        .select('id, haxball_name, is_admin')
+        .eq('haxball_name', player.name)
+        .maybeSingle()
+    );
+
+    if (nameData) {
+      logger.info(`[Auth] Nick "${player.name}" já está em uso por outro ID. Forçando login.`);
+      return { loginRequired: true, name: nameData.haxball_name };
+    }
+
     // Jogador não registrado — sem sessão ainda
     logger.info(`[Auth] Jogador "${player.name}" entrou sem cadastro.`);
     return;
@@ -174,6 +188,23 @@ export async function registerPlayer(room, player, args) {
   if (existing) {
     room.sendAnnouncement(
       `⚠️ ${player.name}, esse ID já está vinculado a uma conta existente.`,
+      player.id, 0xFFAA00, 'bold', 1
+    );
+    return;
+  }
+
+  // Verifica se o NICK já está em uso (proteção requisitada)
+  const { data: nicknameTaken } = await dbCall(() =>
+    supabase
+      .from('user_info')
+      .select('id')
+      .eq('haxball_name', player.name)
+      .maybeSingle()
+  );
+
+  if (nicknameTaken) {
+    room.sendAnnouncement(
+      `⚠️ O nick "${player.name}" já está registrado. Use !login <senha>`,
       player.id, 0xFFAA00, 'bold', 1
     );
     return;

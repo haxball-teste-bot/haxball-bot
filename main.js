@@ -22,7 +22,7 @@ import {
 import { cmdLogin } from './src/modules/altLogin.js';
 
 // ── Economia ──
-import { cmdSaldo, cmdAddCoins, cmdRating } from './src/modules/economy.js';
+import { cmdSaldo, cmdAddCoins, cmdRating, cmdStatus, cmdTop } from './src/modules/economy.js';
 
 // ── Loja ──
 import { cmdShop, cmdBuy } from './src/modules/shop.js';
@@ -47,6 +47,7 @@ import {
   registerGoal,
   finalizeMatch,
   getLastKickerName,
+  getStreakInfo,
 } from './src/modules/matchStats.js';
 
 // ── Fila + Pick + Skip ──
@@ -171,7 +172,22 @@ const onPlayerJoin = safeAsync(async (player) => {
   logger.info(`[Join] ${player.name} (id=${player.id}, auth=${player.auth ?? 'null'})`);
 
   capturePlayerAuth(player);
+  
+  // ── Proteção contra mesmo IP (Requisitado pelo usuário) ──
+  const players = await roomProxy.getPlayerList();
+  const sameIp = players.find(p => p.conn === player.conn && p.id !== player.id);
+  if (sameIp) {
+    logger.warn(`[Join] Bloqueado IP duplicado: ${player.name} (conn=${player.conn})`);
+    roomProxy.kickPlayer(player.id, "🚫 Mesmo IP detectado", false);
+    return;
+  }
+
   const result = await loadPlayerSession(player);
+
+  if (result?.loginRequired) {
+    roomProxy.sendAnnouncement(`⚠️ O nick "${player.name}" já está registrado. Use !login <senha> para entrar.`, player.id, 0xFFAA00, 'bold', 2);
+    return;
+  }
 
   if (result?.banned) {
     roomProxy.kickPlayer(player.id, `🚫 Você está banido por mais ${(new Date(result.expiresAt) - new Date()) / 60000 | 0} min. Motivo: ${result.reason || 'S/M'}`, false);
@@ -221,6 +237,9 @@ const onPlayerLeave = safeAsync(async (player) => {
   teamOnLeave(roomProxy, player);
 }, 'onPlayerLeave');
 
+// ── Cooldown de Comandos (2 segundos) ──
+const lastCommandTimes = new Map();
+
 const onPlayerChat = safeAsync(async (player, message) => {
   const trimmed = message.trim();
   if (!trimmed) return;
@@ -236,6 +255,19 @@ const onPlayerChat = safeAsync(async (player, message) => {
     broadcastChat(roomProxy, player, trimmed);
     return;
   }
+
+  // Se chegou aqui, é um comando (!)
+  afkManager.updateActivity(player.id); // Reset AFK timer on command
+
+  // Cooldown de 2 segundos
+  const now = Date.now();
+  const lastTime = lastCommandTimes.get(player.id) || 0;
+  if (now - lastTime < 2000) {
+    const remaining = ((2000 - (now - lastTime)) / 1000).toFixed(1);
+    roomProxy.sendAnnouncement(`⏳ Aguarde ${remaining}s para usar outro comando.`, player.id, 0xFFCC00, 'normal', 1);
+    return false;
+  }
+  lastCommandTimes.set(player.id, now);
 
   const parts   = trimmed.slice(1).split(/\s+/);
   const command = parts[0].toLowerCase();
@@ -267,6 +299,16 @@ const onPlayerChat = safeAsync(async (player, message) => {
       break;
     case 'rating':
       cmdRating(roomProxy, player);
+      break;
+    case 'status':
+    case 'stats':
+    case 'perfil':
+      await cmdStatus(roomProxy, player, args);
+      break;
+    case 'top':
+    case 'rank':
+    case 'ranking':
+      await cmdTop(roomProxy, player);
       break;
 
     // ── Loja ──
@@ -315,6 +357,21 @@ const onPlayerChat = safeAsync(async (player, message) => {
     case 'ajuda':
     case 'h':
       cmdHelp(roomProxy, player);
+      break;
+    case 'streak':
+    case 'sequencia':
+      const info = getStreakInfo();
+      if (info.streak > 0) {
+        roomProxy.sendAnnouncement(
+          `🔥 Streak Atual: O Time ${info.teamName} tem ${info.streak} vitórias seguidas! (+${info.bonusPercent}%)`,
+          null, 0xFFD700, 'bold', 1
+        );
+      } else {
+        roomProxy.sendAnnouncement(
+          `❄️ Ninguém tem streak no momento.`,
+          player.id, 0xDCDCDC, 'normal', 1
+        );
+      }
       break;
     case 'bb':
       roomProxy.kickPlayer(player.id, '👋 Flw, até a próxima!', false);
@@ -462,8 +519,8 @@ async function bootstrap() {
       window.__room = room;
 
       room.setCustomStadium(stadiumHbs);
-      room.setScoreLimit(3);
-      room.setTimeLimit(3); // 3 minutos
+      room.setScoreLimit(2);
+      room.setTimeLimit(2);
       room.setTeamsLock(true);
 
       console.log('[HaxBall] Sala configurada. Aguardando conexões...');
