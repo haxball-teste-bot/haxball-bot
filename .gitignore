@@ -11,3 +11,6 @@ migrations/
 # OS
 .DS_Store
 Thumbs.db
+
+# Schema
+schema.sql
