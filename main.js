@@ -22,13 +22,17 @@ import {
 import { cmdLogin } from './src/modules/altLogin.js';
 
 // ── Economia ──
-import { cmdSaldo, cmdAddMoney, cmdRating } from './src/modules/economy.js';
+import { cmdSaldo, cmdAddCoins, cmdRating } from './src/modules/economy.js';
 
 // ── Loja ──
 import { cmdShop, cmdBuy } from './src/modules/shop.js';
 
 // ── Permissões ──
 import { cmdGetAdmin } from './src/modules/permissions.js';
+
+// ── Inventário & Ban ──
+import { cmdItens } from './src/modules/inventory.js';
+import { cmdTempBan } from './src/modules/tempBan.js';
 
 // ── Ajuda ──
 import { cmdHelp } from './src/modules/help.js';
@@ -167,7 +171,12 @@ const onPlayerJoin = safeAsync(async (player) => {
   logger.info(`[Join] ${player.name} (id=${player.id}, auth=${player.auth ?? 'null'})`);
 
   capturePlayerAuth(player);
-  await loadPlayerSession(player);
+  const result = await loadPlayerSession(player);
+
+  if (result?.banned) {
+    roomProxy.kickPlayer(player.id, `🚫 Você está banido por mais ${(new Date(result.expiresAt) - new Date()) / 60000 | 0} min. Motivo: ${result.reason || 'S/M'}`, false);
+    return;
+  }
 
   // Verificação de Nickname
   const session = sessionManager.get(player.id);
@@ -252,9 +261,9 @@ const onPlayerChat = safeAsync(async (player, message) => {
     case 'balance':
       cmdSaldo(roomProxy, player);
       break;
-    case 'addmoney':
+    case 'addcoins':
     case 'recarga':
-      await cmdAddMoney(roomProxy, player, args);
+      await cmdAddCoins(roomProxy, player, args);
       break;
     case 'rating':
       cmdRating(roomProxy, player);
@@ -268,6 +277,15 @@ const onPlayerChat = safeAsync(async (player, message) => {
     case 'buy':
     case 'comprar':
       await cmdBuy(roomProxy, player, args);
+      break;
+
+    case 'itens':
+    case 'inventario':
+      await cmdItens(roomProxy, player);
+      break;
+
+    case 'tempban':
+      await cmdTempBan(roomProxy, player, args);
       break;
 
     // ── Fila / AFK ──

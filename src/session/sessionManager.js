@@ -11,7 +11,9 @@
  * @property {string} haxball_name - Nome registrado no banco
  * @property {number} balance     - Saldo atual (actual_balance parseado como int)
  * @property {boolean} is_admin   - Se o jogador tem acesso ao !getadmin
- * @property {boolean} is_vip     - Derivado de log_purchase (comprou item 'vip')
+ * @property {boolean} is_vip     - Derivado de log_purchase ou vip_expires_at
+ * @property {string|null} vipExpiresAt - ISO String da data de expiração do VIP
+ * @property {Map<string, number>} inventory - Itens consumíveis (key -> quantity)
  * @property {string|null} auth_key - player.auth capturado no onPlayerJoin
  */
 

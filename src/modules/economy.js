@@ -11,11 +11,12 @@ import { sessionManager } from '../session/sessionManager.js';
 import { dbCall } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 
-/** Formata centavos para exibição: 1000 → "10,00" */
-export function formatBalance(cents) {
-  const n = Number(cents);
-  if (isNaN(n)) return '0,00';
-  return (n / 100).toFixed(2).replace('.', ',');
+/** Formata valor para exibição em Coins: 1000 → "1.000 Coins" */
+export function formatCoins(amount) {
+  const n = Number(amount);
+  if (isNaN(n)) return '0 Coins';
+  // Formata com separador de milhar (ponto) e sufixo "Coins"
+  return n.toLocaleString('pt-BR') + ' Coins';
 }
 
 /**
@@ -35,20 +36,20 @@ export function cmdSaldo(room, player) {
   }
 
   room.sendAnnouncement(
-    `💰 ${player.name}, seu saldo atual: R$ ${formatBalance(session.balance)}`,
+    `💰 ${player.name}, seu saldo atual: ${formatCoins(session.balance)}`,
     player.id, 0x00CCFF, 'bold', 1
   );
 }
 
 /**
- * !addmoney <valor> [nick] — Adiciona saldo ao jogador (Somente Admins).
+ * !addcoins <valor> [nick] — Adiciona moedas ao jogador (Somente Admins).
  * Se o nick não for informado, adiciona para quem digitou. O alvo deve estar na sala.
  *
  * @param {object} room
  * @param {object} player
  * @param {string[]} args - args[0] = valor, args[1..] = nick (opcional)
  */
-export async function cmdAddMoney(room, player, args) {
+export async function cmdAddCoins(room, player, args) {
   const adminSession = sessionManager.get(player.id);
 
   if (!adminSession?.is_admin) {
@@ -62,7 +63,7 @@ export async function cmdAddMoney(room, player, args) {
   const amount = parseInt(args[0], 10);
   if (!args[0] || isNaN(amount) || amount <= 0) {
     room.sendAnnouncement(
-      `⚠️ Uso correto: !addmoney <valor> [nick] (ex: !addmoney 500 = R$ 5,00)`,
+      `⚠️ Uso correto: !addcoins <valor> [nick] (ex: !addcoins 1000)`,
       player.id, 0xFFD3B6, 'normal', 1
     );
     return;
@@ -124,20 +125,20 @@ export async function cmdAddMoney(room, player, args) {
 
   // Atualiza sessão
   sessionManager.patch(targetId, { balance: newBalance });
-  logger.info(`[Economy] Admin "${player.name}" adicionou +${amount} centavos para "${targetSession.haxball_name}".`);
+  logger.info(`[Economy] Admin "${player.name}" adicionou +${amount} coins para "${targetSession.haxball_name}".`);
 
   if (targetId === player.id) {
     room.sendAnnouncement(
-      `✅ Recarga de R$ ${formatBalance(amount)} aplicada a você. Novo saldo: R$ ${formatBalance(newBalance)}`,
+      `✅ Recarga de ${formatCoins(amount)} aplicada a você. Novo saldo: ${formatCoins(newBalance)}`,
       player.id, 0xA8E6CF, 'normal', 2
     );
   } else {
     room.sendAnnouncement(
-      `✅ Recarga de R$ ${formatBalance(amount)} aplicada para ${targetSession.haxball_name}.`,
+      `✅ Recarga de ${formatCoins(amount)} aplicada para ${targetSession.haxball_name}.`,
       player.id, 0xA8E6CF, 'normal', 2
     );
     room.sendAnnouncement(
-      `💰 Você recebeu R$ ${formatBalance(amount)} do Admin ${player.name}!`,
+      `💰 Você recebeu ${formatCoins(amount)} do Admin ${player.name}!`,
       targetId, 0xA8E6CF, 'normal', 2
     );
   }

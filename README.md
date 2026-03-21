@@ -95,13 +95,15 @@ node --watch main.js
 |---|---|
 | `!register <senha>` | Cria conta vinculada ao seu nickname, token atual e senha |
 | `!login <senha>`| Entra na sua conta a partir de outra máquina |
-| `!saldo` | Exibe seu saldo atual |
-| `!addmoney <v> <n>` | Adiciona saldo para si mesmo ou para `<n>` (Apenas **Admin**) |
+| `!saldo` | Exibe seu saldo atual em **Coins** |
+| `!itens` | Exibe seu inventário e validade do VIP |
+| `!addcoins <v> <n>` | Adiciona Coins para si mesmo ou para `<n>` (Apenas **Admin**) |
 | `!shop` | Exibe itens na loja |
-| `!buy <chave>` | Compra item pelo key (ex: `!buy vip`, `!buy jump`) |
+| `!buy <chave>` | Compra item pelo key (ex: `!buy vip`, `!buy jump`, `!buy tempban`) |
 | `!rating` | Exibe seu rating atual |
 | `!fila` | Exibe a fila atual de espectadores aguardando partida |
-| `!pulafila` | Vai para o topo da fila (VIPs a cada 15m, Admins a cada 1m) |
+| `!pulafila` | Vai para o topo da fila (VIPs/Admins grátis, outros usam item do inventário) |
+| `!tempban <n> <m>` | Bane um jogador por 15 min (Custa 5.000 Coins) |
 | `!getadmin` | Toggle de admin (requer `is_admin = true` no banco) |
 | `!help` | Lista todos os comandos |
 
@@ -138,6 +140,7 @@ O limite competitivo é estabelecido em **3v3** (configurável em `src/config/ra
 
 - Todas as partidas `3v3` alimentam tabelas SQL de match-history e match-statistics.
 - **Rating Dinâmico:** Atualizado somente pós-partida com base no **resultado (Win/Loss)** e **performance (Goals, Assists, Own Goals)**.
+- **Recompensa por Vitória:** Cada vitória concede **5 Coins** automaticamente aos vencedores.
 - *Nota sobre Assistências*: A API nativa do HaxBall não avisa quem efetuou ou quem chutou. O sistema trabalha baseando o status do chute guardando de memória quem foi o penúltimo do respectivo time da bolada!
   
 ---
@@ -163,9 +166,9 @@ O bot roda em Node.js mas a API HaxBall executa no browser (Chromium via Puppete
 
 ## Roadmap Futuro
 
-- [ ] Autenticação real via site próprio
-- [ ] Integração com pagar.me para recargas
+- [x] Autenticação real via PIN alternativo (!setpin/!login)
+- [ ] Integração com site próprio
 - [ ] Loja web
-- [ ] Sistema de ranking
-- [ ] Inventário e cosméticos
-- [ ] Sistema VIP com benefícios avançados
+- [x] Inventário e cosméticos (!itens)
+- [x] Sistema VIP com validade de 30 dias
+- [x] Sistema de Banimento Temporário (!tempban)

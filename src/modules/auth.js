@@ -17,7 +17,7 @@ import { dbCall } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 import { createHash } from 'crypto';
 
-const INITIAL_BALANCE = 0; // Saldo inicial em centavos (R$ 0,00)
+const INITIAL_BALANCE = 0; // Saldo inicial em moedas (0 Coins)
 
 /** Gera hash SHA-256 de uma string */
 function hashPassword(pass) {
@@ -39,12 +39,31 @@ export async function loadPlayerSession(player) {
   const { data, error } = await dbCall(() =>
     supabase
       .from('user_info')
-      .select('id, haxball_name, actual_balance, is_admin, rating, skip_queue_used_at')
+      .select('id, haxball_name, actual_balance, is_admin, rating, skip_queue_used_at, vip_expires_at')
       .eq('auth_key', player.auth)
       .maybeSingle()
   );
 
   if (error) return;
+
+  // ── Verificação de Banimento Temporário ──
+  const { data: banData } = await dbCall(() =>
+    supabase
+      .from('temp_bans')
+      .select('reason, expires_at')
+      .eq('auth_key', player.auth)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle()
+  );
+
+  if (banData) {
+    logger.info(`[Auth] Jogador banido tentou entrar: "${player.name}" (Até: ${banData.expires_at})`);
+    // O kick deve ser feito via roomProxy. No main.js, onPlayerJoin recebe player
+    // mas não temos acesso fácil ao roomProxy aqui sem passar por argumento.
+    // No entanto, loadPlayerSession é chamado no main.js.
+    // Vou retornar um erro ou sinalizar para o main.js kickar.
+    return { banned: true, reason: banData.reason, expiresAt: banData.expires_at };
+  }
 
   if (!data) {
     // Jogador não registrado — sem sessão ainda
@@ -52,22 +71,50 @@ export async function loadPlayerSession(player) {
     return;
   }
 
-  // Verifica se tem VIP (comprou o item com key 'vip')
-  const { data: vipData } = await dbCall(() =>
+  // Verifica se o VIP expirou
+  let isVip = false;
+  if (data.vip_expires_at) {
+    const expiry = new Date(data.vip_expires_at);
+    if (expiry > new Date()) {
+      isVip = true;
+    } else {
+      logger.info(`[Auth] VIP expirado para "${player.name}" (Expirou em: ${data.vip_expires_at})`);
+    }
+  }
+
+  // Se não tem vip_expires_at, verifica o log_purchase (legado ou manual)
+  if (!isVip) {
+    const { data: vipData } = await dbCall(() =>
+      supabase
+        .from('log_purchase')
+        .select('id, items!inner(key)')
+        .eq('id_user', data.id)
+        .eq('items.key', 'vip')
+        .maybeSingle()
+    );
+    if (vipData) isVip = true;
+  }
+
+  // Carrega Inventário
+  const { data: invData } = await dbCall(() =>
     supabase
-      .from('log_purchase')
-      .select('id, items!inner(key)')
-      .eq('id_user', data.id)
-      .eq('items.key', 'vip')
-      .maybeSingle()
+      .from('inventory')
+      .select('item_key, quantity')
+      .eq('user_id', data.id)
   );
+  const inventoryMap = new Map();
+  if (invData) {
+    invData.forEach(item => inventoryMap.set(item.item_key, item.quantity));
+  }
 
   const session = {
     dbId: data.id,
     haxball_name: data.haxball_name,
     balance: parseInt(data.actual_balance, 10) || 0,
     is_admin: data.is_admin === true,
-    is_vip: !!vipData,
+    is_vip: isVip,
+    vipExpiresAt: data.vip_expires_at || null,
+    inventory: inventoryMap,
     rating: data.rating ?? 1000,
     skipQueueUsedAt: data.skip_queue_used_at || null,
     auth_key: player.auth,
@@ -75,6 +122,11 @@ export async function loadPlayerSession(player) {
 
   sessionManager.set(player.id, session);
   logger.info(`[Auth] Sessão carregada para "${player.name}" (admin=${session.is_admin}, vip=${session.is_vip}, saldo=${session.balance})`);
+}
+
+/** Formata valor para exibição em Coins */
+function formatCoins(amount) {
+  return amount.toLocaleString('pt-BR') + ' Coins';
 }
 
 /**
@@ -174,7 +226,7 @@ export async function registerPlayer(room, player, args) {
   sessionManager.set(player.id, newSession);
 
   room.sendAnnouncement(
-    `✅ Conta criada com sucesso! Bem-vindo(a), ${player.name}! 🎉 Saldo inicial: R$ ${formatBalance(INITIAL_BALANCE)}`,
+    `✅ Conta criada com sucesso! Bem-vindo(a), ${player.name}! 🎉 Saldo inicial: ${formatCoins(INITIAL_BALANCE)}`,
     player.id, 0x00FF88, 'bold', 2
   );
 
@@ -198,14 +250,7 @@ export function capturePlayerAuth(player) {
   }
 }
 
-/**
- * Remove o auth_key temporário quando o jogador sai.
- */
+/** Remove o auth_key temporário quando o jogador sai. */
 export function releasePlayerAuth(playerId) {
   _pendingAuth.delete(playerId);
-}
-
-/** Formata centavos para exibição em R$ */
-function formatBalance(cents) {
-  return (cents / 100).toFixed(2).replace('.', ',');
 }

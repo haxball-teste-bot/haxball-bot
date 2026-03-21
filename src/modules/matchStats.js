@@ -21,7 +21,7 @@ import { supabase } from '../config/supabase.js';
 import { sessionManager } from '../session/sessionManager.js';
 import { dbCall } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
-import { RATING } from '../config/ratingConfig.js';
+import { RATING, COINS } from '../config/ratingConfig.js';
 
 // ── Estado interno da partida atual ──────────────────────────────────────────
 
@@ -31,11 +31,11 @@ let currentMatchId = null;
 /** true se a partida atual for competitiva (conta rating) */
 let isCompetitive = false;
 
-/** Map<playerId, { goals, assists, ownGoals, team }> */
+/** Map<playerId, { goals, assists, ownGoals, saves, passes, team, coinsEarned }> */
 const statsMap = new Map();
 
 /** Últimos dois chutadores: [mais recente, anterior] */
-let lastKickers = [null, null]; // [{ playerId, team }, { playerId, team }]
+let lastKickers = [null, null]; // [{ playerId, team, x, y }, { playerId, team, x, y }]
 
 // ── API pública ───────────────────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ export async function startMatch(room, redCount, blueCount) {
     if (!session) continue;
     // Verificar time será feito dinamicamente via onPlayerTeamChange ou estado da sessão
     // Por ora inicializamos sem time — será setado no primeiro toque ou goal
-    statsMap.set(pid, { goals: 0, assists: 0, ownGoals: 0, team: 0 });
+    statsMap.set(pid, { goals: 0, assists: 0, ownGoals: 0, saves: 0, passes: 0, team: 0, coinsEarned: 0 });
   }
 
   logger.info(`[MatchStats] Partida ${currentMatchId} iniciada (competitiva=${isCompetitive}, ${redCount}v${blueCount})`);
@@ -95,7 +95,29 @@ export async function startMatch(room, redCount, blueCount) {
  * @param {object} player - PlayerObject HaxBall
  */
 export function registerKick(player) {
-  const kicker = { playerId: player.id, team: player.team };
+  const kicker = { playerId: player.id, team: player.team, x: player.x, y: player.y };
+
+  // 1. Detecção de Passe
+  // Se o último chutador era do mesmo time e não era o próprio jogador
+  if (lastKickers[0] && lastKickers[0].team === player.team && lastKickers[0].playerId !== player.id) {
+    const passStats = statsMap.get(lastKickers[0].playerId);
+    if (passStats) {
+      passStats.passes++;
+      passStats.coinsEarned += COINS.PASS;
+    }
+  }
+
+  // 2. Detecção de Defesa (Save)
+  // Se o jogador chutou na sua própria área de defesa (Red < -400, Blue > 400)
+  const isDefenseArea = (player.team === 1 && player.x < -400) || (player.team === 2 && player.x > 400);
+  if (isDefenseArea) {
+    const defenseStats = statsMap.get(player.id);
+    if (defenseStats) {
+      defenseStats.saves++;
+      defenseStats.coinsEarned += COINS.SAVE;
+    }
+  }
+
   lastKickers = [kicker, lastKickers[0]]; // desloca a fila
 
   // Registra time do jogador nas stats
@@ -103,7 +125,7 @@ export function registerKick(player) {
     const s = statsMap.get(player.id);
     if (s.team === 0) s.team = player.team; // seta time na primeira ocorrência
   } else {
-    statsMap.set(player.id, { goals: 0, assists: 0, ownGoals: 0, team: player.team });
+    statsMap.set(player.id, { goals: 0, assists: 0, ownGoals: 0, saves: 0, passes: 0, team: player.team, coinsEarned: 0 });
   }
 }
 
@@ -140,6 +162,7 @@ export function registerGoal(room, teamId) {
       logger.info(`[MatchStats] Gol contra de playerId=${scorer.playerId}`);
     } else {
       scorerStats.goals++;
+      scorerStats.coinsEarned += COINS.GOAL;
       logger.info(`[MatchStats] Gol de playerId=${scorer.playerId}`);
     }
   }
@@ -228,9 +251,28 @@ export async function finalizeMatch(room, winnerTeam, redScore, blueScore) {
     });
   }
 
-  // Persiste match_stats e atualiza rating em paralelo
+  // ── Recompensa por Vitória (10 Coins) ──
+  if (winnerTeam !== null && winnerTeam !== 0) {
+    const winners = [];
+    for (const [playerId, stats] of statsMap.entries()) {
+      if (stats.team === winnerTeam) {
+        winners.push(playerId);
+        stats.coinsEarned += COINS.WIN;
+      }
+    }
+
+    if (winners.length > 0) {
+      // room.sendAnnouncement(`💰 Os vencedores receberam +10 Coins pela vitória!`, null, 0xFFD700, 'bold', 2);
+      // Removido anúncio global poluído, será enviado no privado
+    }
+  }
+
+  // Persiste match_stats e atualiza rating/saldo em paralelo
   await Promise.all(ratingUpdates.map(async ({ dbId, playerId, matchId, stats, newRating, delta }) => {
-    // Insert em match_stats
+    const session = sessionManager.get(playerId);
+    if (!session) return;
+
+    // 1. Insert em match_stats
     await dbCall(() =>
       supabase.from('match_stats').insert({
         match_id:    matchId,
@@ -243,18 +285,29 @@ export async function finalizeMatch(room, winnerTeam, redScore, blueScore) {
       })
     );
 
-    // Atualiza rating em user_info
+    // 2. Atualiza Rating e Saldo em user_info
+    const newBalance = (session.balance || 0) + stats.coinsEarned;
     await dbCall(() =>
       supabase
         .from('user_info')
-        .update({ rating: newRating })
+        .update({ 
+          rating: newRating,
+          actual_balance: String(newBalance)
+        })
         .eq('id', dbId)
     );
 
-    // Atualiza sessão em memória
-    sessionManager.patch(playerId, { rating: newRating });
+    // 3. Atualiza sessão em memória
+    sessionManager.patch(playerId, { 
+      rating: newRating,
+      balance: newBalance
+    });
 
-    logger.info(`[Rating] playerId=${playerId} | Δ${delta > 0 ? '+' : ''}${delta} → ${newRating}`);
+    logger.info(`[MatchStats] Finalizando player ${session.haxball_name}: Rating ${newRating} (${delta}), Saldo +${stats.coinsEarned}`);
+
+    // 4. Envia Estatística Privada (Requisitado pelo usuário)
+    const statsMsg = `📊 FIM DE JOGO: ⚽${stats.goals} Gols | 🛡️${stats.saves} Defesas | 🤝${stats.passes} Passes | ⚠️${stats.ownGoals} GC | 💰 +${stats.coinsEarned} Coins`;
+    room.sendAnnouncement(statsMsg, playerId, 0x00FF7F, 'bold', 2);
   }));
 
   // Anuncia resultados no chat
