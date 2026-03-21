@@ -2,9 +2,9 @@
 // Distribuição automática de jogadores em times — substitui o antigo autoTeam.js
 //
 // Regras:
-//   - Máximo 3 jogadores por time (RATING.MAX_PER_TEAM)
-//   - Se total ≤ 6: distribui automaticamente (2 primeiros nos times, resto na fila)
-//   - Se total > 6: excedentes vão para a fila desde o início
+//   - Máximo jogadores por time: RATING.MAX_PER_TEAM
+//   - Se total ≤ MAX*2: distribui automaticamente (resto na fila)
+//   - Se total > MAX*2: excedentes vão para a fila desde o início
 //   - Após fim de partida com fila:
 //       * Time vencedor permanece
 //       * Time perdedor é esvaziado (todos para espectadores)
@@ -21,7 +21,7 @@ import { sessionManager } from '../session/sessionManager.js';
 import { logger } from '../utils/logger.js';
 import { RATING } from '../config/ratingConfig.js';
 
-const MAX = RATING.MAX_PER_TEAM; // 3
+const MAX = RATING.MAX_PER_TEAM;
 const DELAY = 150; // ms antes de chamar setPlayerTeam
 
 /** Contadores de time em memória (mais confiável que getPlayerList() pós-join) */
@@ -33,7 +33,7 @@ let gameActive = false;
 
 let autoBalancePaused = false;
 
-/** Força reequilíbrio dos times, mantendo sempre igualdade perfeita (1v1, 2v2, 3v3) */
+/** Força reequilíbrio dos times, mantendo sempre igualdade perfeita (1v1, 2v2, etc) */
 export async function balanceTeams(room) {
   if (autoBalancePaused || isPickActive()) return;
 
@@ -207,8 +207,8 @@ export async function onMatchEnd(room, winnerTeam, players) {
   // Previne balanceTeams de rodar e cagar com os Pickers
   autoBalancePaused = true;
 
-  if (queueManager.isEmpty() || totalInGame < 6) { // 3v3 é requerido para o Swap Rotativo do Picker
-    logger.info('[TeamDist] Partida não-3v3 ou sem fila. Retomando o jogo...');
+  if (queueManager.isEmpty() || totalInGame < MAX * 2) { 
+    logger.info(`[TeamDist] Partida inferior a ${MAX}v${MAX} ou sem fila. Retomando o jogo...`);
     setTimeout(() => {
       room.stopGame();
       setTimeout(() => {

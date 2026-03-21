@@ -283,9 +283,10 @@ const onPlayerChat = safeAsync(async (player, message) => {
     // ── Conta / Login ──
     case 'login':
       await cmdLogin(roomProxy, player, args);
-      // Se logou e era um nick diferente, o nome não vai bater,
-      // mas o comando de login EXIGE que player.name === registered_name, 
-      // então visualmente já está certo!
+      // Se logou com sucesso (sessão criada), envia para o time/fila
+      if (sessionManager.get(player.id)) {
+        teamOnJoin(roomProxy, player);
+      }
       break;
 
     // ── Economia ──

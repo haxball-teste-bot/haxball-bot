@@ -54,8 +54,20 @@ export async function startMatch(room, redCount, blueCount) {
   statsMap.clear();
   lastKickers = [null, null];
 
-  // Partida é competitiva se cada time tiver pelo menos 3 jogadores (3v3)
-  isCompetitive = (redCount >= 3 && blueCount >= 3);
+  // Partida é competitiva se cada time tiver pelo menos o mínimo requisitado (ex: 1v1)
+  isCompetitive = (redCount >= RATING.MIN_PER_TEAM_FOR_COMPETITIVE && blueCount >= RATING.MIN_PER_TEAM_FOR_COMPETITIVE);
+
+  // Verificação Adicional: Todos os jogadores em campo devem estar registrados
+  const playersInMatch = room.getPlayerList().filter(p => p.team === 1 || p.team === 2);
+  const unregistered = playersInMatch.filter(p => !sessionManager.get(p.id));
+
+  if (isCompetitive && unregistered.length > 0) {
+    isCompetitive = false;
+    room.sendAnnouncement(
+      `⚠️ Partida não competitiva: nem todos os jogadores estão registrados (!register).`,
+      null, 0xFF8800, 'small-italic', 0
+    );
+  }
 
   const { data, error } = await dbCall(() =>
     supabase
@@ -86,8 +98,15 @@ export async function startMatch(room, redCount, blueCount) {
   logger.info(`[MatchStats] Partida ${currentMatchId} iniciada (competitiva=${isCompetitive}, ${redCount}v${blueCount})`);
 
   if (!isCompetitive) {
+    const min = RATING.MIN_PER_TEAM_FOR_COMPETITIVE;
+    let reason = `é necessário pelo menos ${min}v${min}`;
+    
+    if (redCount >= min && blueCount >= min && unregistered.length > 0) {
+      reason = "nem todos os jogadores estão registrados (!register)";
+    }
+
     room.sendAnnouncement(
-      `⚠️ Partida não competitiva — rating e resultados não serão contabilizados.`,
+      `⚠️ Partida não competitiva (${reason}) — rating e resultados não serão contabilizados.`,
       null, 0xFF8800, 'small-italic', 0
     );
   }
